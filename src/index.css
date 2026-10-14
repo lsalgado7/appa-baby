@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --color-bg: #f9f8f6; /* Nara warm soft cream */
+    --color-surface: #ffffff;
+    --color-card: #f3efe9;
+    --color-text-primary: #1f1d1a;
+    --color-text-secondary: #746f68;
+    --color-accent: #3d3b38;
+    --color-border: #e6e2da;
+  }
+
+  .dark {
+    --color-bg: #09090b; /* True AMOLED black */
+    --color-surface: #121215;
+    --color-card: #18181b;
+    --color-text-primary: #f4f4f5;
+    --color-text-secondary: #a1a1aa;
+    --color-accent: #fafafa;
+    --color-border: #27272a;
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    min-height: 100dvh;
+  }
+}
+
+/* Touch-friendly scrolling & safe areas */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overscroll-behavior-y: none;
+}
