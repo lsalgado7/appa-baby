@@ -5,13 +5,14 @@ import { Header } from './components/Header';
 import { LastFedBanner } from './components/LastFedBanner';
 import { NursingTimer } from './components/NursingTimer';
 import { PumpingTimer } from './components/PumpingTimer';
+import { BottleLogger } from './components/BottleLogger';
 import { DailyStats } from './components/DailyStats';
 import { SessionTimeline } from './components/SessionTimeline';
 import { ManualEntryModal } from './components/ManualEntryModal';
 import { EditSessionModal } from './components/EditSessionModal';
 import { FamilyPairingModal } from './components/FamilyPairingModal';
-import type { TimelineItem } from './types';
-import { PlusCircle, Heart, Droplets } from 'lucide-react';
+import type { TimelineItem, SessionType } from './types';
+import { PlusCircle, Heart, Droplets, Milk } from 'lucide-react';
 import { triggerHaptic } from './utils/haptics';
 
 const AppContent: React.FC = () => {
@@ -21,16 +22,16 @@ const AppContent: React.FC = () => {
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<TimelineItem | null>(null);
 
-  const handleTabChange = (tab: 'nursing' | 'pumping') => {
+  const handleTabChange = (tab: SessionType) => {
     triggerHaptic('light');
     setActiveTab(tab);
   };
 
   return (
-    <div className="min-h-screen bg-[#f9f8f6] dark:bg-[#09090b] text-[#1f1d1a] dark:text-[#f4f4f5] flex flex-col items-center pb-12 transition-colors">
+    <div className="min-h-screen bg-[#f9f8f6] dark:bg-[#09090b] text-[#1f1d1a] dark:text-[#f4f4f5] flex flex-col items-center safe-bottom pb-12 transition-colors">
       {/* Max-width container matching mobile screen ratio */}
       <div className="w-full max-w-md flex flex-col min-h-screen px-4">
-        {/* App Header */}
+        {/* App Header with safe-top padding for iOS notch/Dynamic Island */}
         <Header onOpenFamilyModal={() => setIsFamilyModalOpen(true)} />
 
         <main className="flex-1 flex flex-col gap-5 pt-4">
@@ -43,7 +44,7 @@ const AppContent: React.FC = () => {
               <button
                 type="button"
                 onClick={() => handleTabChange('nursing')}
-                className={`flex-1 py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition active:scale-[0.98] ${
+                className={`flex-1 py-2 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition active:scale-[0.98] ${
                   activeTab === 'nursing'
                     ? 'bg-[#1f1d1a] text-white dark:bg-[#f4f4f5] dark:text-[#09090b] shadow-xs'
                     : 'text-[#746f68] dark:text-[#a1a1aa]'
@@ -55,8 +56,21 @@ const AppContent: React.FC = () => {
 
               <button
                 type="button"
+                onClick={() => handleTabChange('bottle')}
+                className={`flex-1 py-2 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition active:scale-[0.98] ${
+                  activeTab === 'bottle'
+                    ? 'bg-[#1f1d1a] text-white dark:bg-[#f4f4f5] dark:text-[#09090b] shadow-xs'
+                    : 'text-[#746f68] dark:text-[#a1a1aa]'
+                }`}
+              >
+                <Milk className="w-3.5 h-3.5" />
+                <span>Bottle</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => handleTabChange('pumping')}
-                className={`flex-1 py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition active:scale-[0.98] ${
+                className={`flex-1 py-2 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition active:scale-[0.98] ${
                   activeTab === 'pumping'
                     ? 'bg-[#1f1d1a] text-white dark:bg-[#f4f4f5] dark:text-[#09090b] shadow-xs'
                     : 'text-[#746f68] dark:text-[#a1a1aa]'
@@ -80,8 +94,10 @@ const AppContent: React.FC = () => {
             </button>
           </div>
 
-          {/* Active Timer View */}
-          {activeTab === 'nursing' ? <NursingTimer /> : <PumpingTimer />}
+          {/* Active Tracker View */}
+          {activeTab === 'nursing' && <NursingTimer />}
+          {activeTab === 'bottle' && <BottleLogger />}
+          {activeTab === 'pumping' && <PumpingTimer />}
 
           {/* Today's Daily Stats */}
           <DailyStats />

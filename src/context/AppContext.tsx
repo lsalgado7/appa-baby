@@ -2,17 +2,21 @@ import React, { createContext, useEffect, useState, useMemo, useCallback } from 
 import type {
   NursingSession,
   PumpingSession,
+  BottleFeeding,
   ActiveTimerState,
   FeedSide,
   ActiveSide,
   SessionType,
   VolumeUnit,
+  MilkType,
 } from '../types';
 import {
   getLocalNursingSessions,
   saveLocalNursingSessions,
   getLocalPumpingSessions,
   saveLocalPumpingSessions,
+  getLocalBottleFeedings,
+  saveLocalBottleFeedings,
   getLocalActiveTimer,
   saveLocalActiveTimer,
   getStoredFamilyId,
@@ -29,6 +33,9 @@ import {
   fetchRemotePumpingSessions,
   upsertRemotePumpingSession,
   deleteRemotePumpingSession,
+  fetchRemoteBottleFeedings,
+  upsertRemoteBottleFeeding,
+  deleteRemoteBottleFeeding,
   fetchRemoteActiveTimer,
   upsertRemoteActiveTimer,
   subscribeToFamilySync,
@@ -48,12 +55,16 @@ export interface AppContextType {
   // Sessions
   nursingSessions: NursingSession[];
   pumpingSessions: PumpingSession[];
+  bottleFeedings: BottleFeeding[];
   addNursingSession: (session: Omit<NursingSession, 'id' | 'family_id' | 'created_at'>) => Promise<void>;
   updateNursingSession: (session: NursingSession) => Promise<void>;
   deleteNursingSession: (id: string) => Promise<void>;
   addPumpingSession: (session: Omit<PumpingSession, 'id' | 'family_id' | 'created_at'>) => Promise<void>;
   updatePumpingSession: (session: PumpingSession) => Promise<void>;
   deletePumpingSession: (id: string) => Promise<void>;
+  addBottleFeeding: (feeding: Omit<BottleFeeding, 'id' | 'family_id' | 'created_at'>) => Promise<void>;
+  updateBottleFeeding: (feeding: BottleFeeding) => Promise<void>;
+  deleteBottleFeeding: (id: string) => Promise<void>;
 
   // Active Timer State & Elapsed
   activeTimer: ActiveTimerState | null;
@@ -67,9 +78,25 @@ export interface AppContextType {
   pauseTimer: () => void;
   switchSide: (side: 'left' | 'right') => void;
   resetTimer: () => void;
-  saveActiveSession: (notes?: string, pumpingAmounts?: { left: number; right: number; unit: VolumeUnit }) => Promise<void>;
+  saveActiveSession: (
+    notes?: string,
+    extra?: {
+      pumpingAmounts?: { left: number; right: number; unit: VolumeUnit };
+      bottle?: { amount: number; unit: VolumeUnit; milkType: MilkType };
+    }
+  ) => Promise<void>;
+
+  // Quick Bottle Logger
+  logQuickBottle: (
+    amount: number,
+    unit: VolumeUnit,
+    milkType: MilkType,
+    durationSeconds?: number,
+    notes?: string
+  ) => Promise<void>;
 
   // Derived Info
+  lastFeedingOverall: { type: 'nursing'; session: NursingSession } | { type: 'bottle'; feeding: BottleFeeding } | null;
   lastNursingSession: NursingSession | null;
   nextRecommendedSide: FeedSide | null;
   isSupabaseConfigured: boolean;
@@ -90,6 +117,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [nursingSessions, setNursingSessions] = useState<NursingSession[]>(getLocalNursingSessions);
   const [pumpingSessions, setPumpingSessions] = useState<PumpingSession[]>(getLocalPumpingSessions);
+  const [bottleFeedings, setBottleFeedings] = useState<BottleFeeding[]>(getLocalBottleFeedings);
   const [activeTimer, setActiveTimer] = useState<ActiveTimerState | null>(getLocalActiveTimer);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
@@ -129,6 +157,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [pumpingSessions]);
 
   useEffect(() => {
+    saveLocalBottleFeedings(bottleFeedings);
+  }, [bottleFeedings]);
+
+  useEffect(() => {
     saveLocalActiveTimer(activeTimer);
   }, [activeTimer]);
 
@@ -146,7 +178,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Dynamically compute exact duration from timestamps
   const { leftSeconds, rightSeconds, totalSeconds, isTimerRunning } = useMemo(() => {
-    // Reference tick so memo recalculates every second
     void tick;
 
     if (!activeTimer) {
@@ -192,9 +223,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const initRemote = async () => {
       setIsSyncing(true);
       try {
-        const [remoteNursing, remotePumping, remoteTimer] = await Promise.all([
+        const [remoteNursing, remotePumping, remoteBottle, remoteTimer] = await Promise.all([
           fetchRemoteNursingSessions(familyId),
           fetchRemotePumpingSessions(familyId),
+          fetchRemoteBottleFeedings(familyId),
           fetchRemoteActiveTimer(familyId),
         ]);
 
@@ -205,6 +237,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
         if (remotePumping.length > 0) {
           setPumpingSessions(remotePumping);
+        }
+        if (remoteBottle.length > 0) {
+          setBottleFeedings(remoteBottle);
         }
         if (remoteTimer) {
           setActiveTimer(remoteTimer);
@@ -233,6 +268,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (eventType === 'INSERT') return [session, ...prev.filter((s) => s.id !== session.id)];
           if (eventType === 'UPDATE') return prev.map((s) => (s.id === session.id ? session : s));
           if (eventType === 'DELETE') return prev.filter((s) => s.id !== session.id);
+          return prev;
+        });
+      },
+      onBottleChange: (feeding, eventType) => {
+        setBottleFeedings((prev) => {
+          if (eventType === 'INSERT') return [feeding, ...prev.filter((s) => s.id !== feeding.id)];
+          if (eventType === 'UPDATE') return prev.map((s) => (s.id === feeding.id ? feeding : s));
+          if (eventType === 'DELETE') return prev.filter((s) => s.id !== feeding.id);
           return prev;
         });
       },
@@ -371,11 +414,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [activeTab, familyId, loggedBy, syncTimerUpstream]);
 
   const saveActiveSession = useCallback(
-    async (notes?: string, pumpingAmounts?: { left: number; right: number; unit: VolumeUnit }) => {
+    async (
+      notes?: string,
+      extra?: {
+        pumpingAmounts?: { left: number; right: number; unit: VolumeUnit };
+        bottle?: { amount: number; unit: VolumeUnit; milkType: MilkType };
+      }
+    ) => {
       if (!activeTimer) return;
       triggerHaptic('success');
 
-      // Finalize accumulated seconds
       let left = activeTimer.left_duration_seconds;
       let right = activeTimer.right_duration_seconds;
 
@@ -394,10 +442,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const now = new Date().toISOString();
       const startTime = activeTimer.session_start_time || now;
-      const lastSide: FeedSide =
-        activeTimer.active_side === 'right' ? 'right' : left >= right ? 'left' : 'right';
 
       if (activeTimer.session_type === 'nursing') {
+        const lastSide: FeedSide =
+          activeTimer.active_side === 'right' ? 'right' : left >= right ? 'left' : 'right';
         const session: NursingSession = {
           id: crypto.randomUUID(),
           family_id: familyId,
@@ -415,7 +463,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (getSupabase()) {
           upsertRemoteNursingSession(session);
         }
-      } else {
+      } else if (activeTimer.session_type === 'pumping') {
         const session: PumpingSession = {
           id: crypto.randomUUID(),
           family_id: familyId,
@@ -423,9 +471,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           end_time: now,
           left_duration_seconds: left,
           right_duration_seconds: right,
-          left_amount: pumpingAmounts?.left || 0,
-          right_amount: pumpingAmounts?.right || 0,
-          unit: pumpingAmounts?.unit || 'oz',
+          left_amount: extra?.pumpingAmounts?.left || 0,
+          right_amount: extra?.pumpingAmounts?.right || 0,
+          unit: extra?.pumpingAmounts?.unit || 'oz',
           logged_by: loggedBy,
           notes: notes || '',
           created_at: now,
@@ -434,6 +482,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setPumpingSessions((prev) => [session, ...prev]);
         if (getSupabase()) {
           upsertRemotePumpingSession(session);
+        }
+      } else if (activeTimer.session_type === 'bottle') {
+        const feeding: BottleFeeding = {
+          id: crypto.randomUUID(),
+          family_id: familyId,
+          start_time: startTime,
+          end_time: now,
+          duration_seconds: left + right,
+          amount: extra?.bottle?.amount || 0,
+          unit: extra?.bottle?.unit || 'oz',
+          milk_type: extra?.bottle?.milkType || 'breast_milk',
+          logged_by: loggedBy,
+          notes: notes || '',
+          created_at: now,
+        };
+
+        setBottleFeedings((prev) => [feeding, ...prev]);
+        if (getSupabase()) {
+          upsertRemoteBottleFeeding(feeding);
         }
       }
 
@@ -453,6 +520,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       syncTimerUpstream(idleTimer);
     },
     [activeTab, activeTimer, familyId, loggedBy, syncTimerUpstream]
+  );
+
+  // Quick Bottle Logger (for instant 1-tap logging without running a timer)
+  const logQuickBottle = useCallback(
+    async (
+      amount: number,
+      unit: VolumeUnit,
+      milkType: MilkType,
+      durationSeconds: number = 0,
+      notes?: string
+    ) => {
+      triggerHaptic('success');
+      const now = new Date().toISOString();
+      const startTime = durationSeconds > 0
+        ? new Date(Date.now() - durationSeconds * 1000).toISOString()
+        : now;
+
+      const feeding: BottleFeeding = {
+        id: crypto.randomUUID(),
+        family_id: familyId,
+        start_time: startTime,
+        end_time: now,
+        duration_seconds: durationSeconds,
+        amount,
+        unit,
+        milk_type: milkType,
+        logged_by: loggedBy,
+        notes: notes || '',
+        created_at: now,
+      };
+
+      setBottleFeedings((prev) => [feeding, ...prev]);
+      if (getSupabase()) {
+        await upsertRemoteBottleFeeding(feeding);
+      }
+    },
+    [familyId, loggedBy]
   );
 
   // ---------------- CRUD operations ----------------
@@ -511,6 +615,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const addBottleFeeding = async (data: Omit<BottleFeeding, 'id' | 'family_id' | 'created_at'>) => {
+    const feeding: BottleFeeding = {
+      ...data,
+      id: crypto.randomUUID(),
+      family_id: familyId,
+      created_at: new Date().toISOString(),
+    };
+    setBottleFeedings((prev) => [feeding, ...prev]);
+    if (getSupabase()) {
+      await upsertRemoteBottleFeeding(feeding);
+    }
+  };
+
+  const updateBottleFeeding = async (feeding: BottleFeeding) => {
+    setBottleFeedings((prev) => prev.map((b) => (b.id === feeding.id ? feeding : b)));
+    if (getSupabase()) {
+      await upsertRemoteBottleFeeding(feeding);
+    }
+  };
+
+  const deleteBottleFeeding = async (id: string) => {
+    setBottleFeedings((prev) => prev.filter((b) => b.id !== id));
+    if (getSupabase()) {
+      await deleteRemoteBottleFeeding(id);
+    }
+  };
+
   // ---------------- Derived Helpers ----------------
 
   const lastNursingSession = useMemo(() => {
@@ -519,6 +650,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       (a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
     )[0];
   }, [nursingSessions]);
+
+  const lastBottleFeeding = useMemo(() => {
+    if (bottleFeedings.length === 0) return null;
+    return [...bottleFeedings].sort(
+      (a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
+    )[0];
+  }, [bottleFeedings]);
+
+  // Overall most recent feeding (nursing or bottle)
+  const lastFeedingOverall = useMemo(() => {
+    if (!lastNursingSession && !lastBottleFeeding) return null;
+    if (!lastBottleFeeding) return { type: 'nursing' as const, session: lastNursingSession! };
+    if (!lastNursingSession) return { type: 'bottle' as const, feeding: lastBottleFeeding };
+
+    const nursingTime = new Date(lastNursingSession.start_time).getTime();
+    const bottleTime = new Date(lastBottleFeeding.start_time).getTime();
+
+    return nursingTime >= bottleTime
+      ? { type: 'nursing' as const, session: lastNursingSession }
+      : { type: 'bottle' as const, feeding: lastBottleFeeding };
+  }, [lastNursingSession, lastBottleFeeding]);
 
   const nextRecommendedSide: FeedSide | null = useMemo(() => {
     if (!lastNursingSession) return 'left';
@@ -539,12 +691,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         nursingSessions,
         pumpingSessions,
+        bottleFeedings,
         addNursingSession,
         updateNursingSession,
         deleteNursingSession,
         addPumpingSession,
         updatePumpingSession,
         deletePumpingSession,
+        addBottleFeeding,
+        updateBottleFeeding,
+        deleteBottleFeeding,
 
         activeTimer,
         leftSeconds,
@@ -557,7 +713,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         switchSide,
         resetTimer,
         saveActiveSession,
+        logQuickBottle,
 
+        lastFeedingOverall,
         lastNursingSession,
         nextRecommendedSide,
         isSupabaseConfigured,

@@ -1,8 +1,8 @@
 import React from 'react';
 import { useApp } from '../context/useApp';
-import type { TimelineItem, NursingSession, PumpingSession } from '../types';
+import type { TimelineItem, NursingSession, PumpingSession, BottleFeeding } from '../types';
 import { formatClockTime, formatDateLabel, formatDurationText } from '../utils/time';
-import { Droplets, Heart, Trash2, Edit3, MessageSquare } from 'lucide-react';
+import { Droplets, Heart, Trash2, Edit3, MessageSquare, Milk } from 'lucide-react';
 import { triggerHaptic } from '../utils/haptics';
 
 interface SessionTimelineProps {
@@ -13,14 +13,17 @@ export const SessionTimeline: React.FC<SessionTimelineProps> = ({ onEditSession 
   const {
     nursingSessions,
     pumpingSessions,
+    bottleFeedings,
     deleteNursingSession,
     deletePumpingSession,
+    deleteBottleFeeding,
   } = useApp();
 
   // Combine and sort chronologically descending
   const timelineItems: TimelineItem[] = [
     ...nursingSessions.map((s) => ({ ...s, type: 'nursing' as const })),
     ...pumpingSessions.map((s) => ({ ...s, type: 'pumping' as const })),
+    ...bottleFeedings.map((s) => ({ ...s, type: 'bottle' as const })),
   ].sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
 
   // Group by date label
@@ -41,8 +44,10 @@ export const SessionTimeline: React.FC<SessionTimelineProps> = ({ onEditSession 
     if (confirm('Delete this entry?')) {
       if (item.type === 'nursing') {
         deleteNursingSession(item.id);
-      } else {
+      } else if (item.type === 'pumping') {
         deletePumpingSession(item.id);
+      } else if (item.type === 'bottle') {
+        deleteBottleFeeding(item.id);
       }
     }
   };
@@ -73,12 +78,25 @@ export const SessionTimeline: React.FC<SessionTimelineProps> = ({ onEditSession 
           <div className="flex flex-col gap-2">
             {items.map((item) => {
               const isNursing = item.type === 'nursing';
+              const isPumping = item.type === 'pumping';
+              const isBottle = item.type === 'bottle';
+
               const nursingItem = isNursing ? (item as NursingSession) : null;
-              const pumpingItem = !isNursing ? (item as PumpingSession) : null;
+              const pumpingItem = isPumping ? (item as PumpingSession) : null;
+              const bottleItem = isBottle ? (item as BottleFeeding) : null;
 
               const totalDuration = isNursing
                 ? nursingItem!.left_duration_seconds + nursingItem!.right_duration_seconds
-                : pumpingItem!.left_duration_seconds + pumpingItem!.right_duration_seconds;
+                : isPumping
+                ? pumpingItem!.left_duration_seconds + pumpingItem!.right_duration_seconds
+                : bottleItem!.duration_seconds;
+
+              const milkLabel =
+                bottleItem?.milk_type === 'breast_milk'
+                  ? 'Breast Milk'
+                  : bottleItem?.milk_type === 'formula'
+                  ? 'Formula'
+                  : 'Mixed';
 
               return (
                 <div
@@ -91,13 +109,17 @@ export const SessionTimeline: React.FC<SessionTimelineProps> = ({ onEditSession 
                       className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
                         isNursing
                           ? 'bg-[#e8e2d8] dark:bg-[#27272a] text-[#1f1d1a] dark:text-[#f4f4f5]'
-                          : 'bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300'
+                          : isPumping
+                          ? 'bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300'
+                          : 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300'
                       }`}
                     >
                       {isNursing ? (
                         <Heart className="w-4 h-4 fill-current opacity-80" />
-                      ) : (
+                      ) : isPumping ? (
                         <Droplets className="w-4 h-4" />
+                      ) : (
+                        <Milk className="w-4 h-4" />
                       )}
                     </div>
 
@@ -105,7 +127,7 @@ export const SessionTimeline: React.FC<SessionTimelineProps> = ({ onEditSession 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-bold text-[#1f1d1a] dark:text-[#f4f4f5] uppercase tracking-wider">
-                          {isNursing ? 'Nursing' : 'Pumping'}
+                          {isNursing ? 'Nursing' : isPumping ? 'Pumping' : 'Bottle'}
                         </span>
                         <span className="text-xs text-[#746f68] dark:text-[#a1a1aa]">
                           • {formatClockTime(item.start_time)}
@@ -119,7 +141,7 @@ export const SessionTimeline: React.FC<SessionTimelineProps> = ({ onEditSession 
 
                       {/* Main Metric */}
                       <div className="mt-1 flex items-baseline gap-2 flex-wrap">
-                        {isNursing ? (
+                        {isNursing && (
                           <>
                             <span className="text-sm font-semibold text-[#1f1d1a] dark:text-[#f4f4f5]">
                               {formatDurationText(totalDuration)}
@@ -129,7 +151,9 @@ export const SessionTimeline: React.FC<SessionTimelineProps> = ({ onEditSession 
                               {Math.round(nursingItem!.right_duration_seconds / 60)}m)
                             </span>
                           </>
-                        ) : (
+                        )}
+
+                        {isPumping && (
                           <>
                             <span className="text-sm font-semibold text-[#1f1d1a] dark:text-[#f4f4f5]">
                               {(
@@ -143,6 +167,21 @@ export const SessionTimeline: React.FC<SessionTimelineProps> = ({ onEditSession 
                                 ({formatDurationText(totalDuration)})
                               </span>
                             )}
+                          </>
+                        )}
+
+                        {isBottle && (
+                          <>
+                            <span className="text-sm font-semibold text-[#1f1d1a] dark:text-[#f4f4f5]">
+                              {bottleItem!.amount.toFixed(1)} {bottleItem!.unit}
+                            </span>
+                            <span className="text-xs text-[#746f68] dark:text-[#a1a1aa]">
+                              ({milkLabel}
+                              {totalDuration > 0
+                                ? ` • ${formatDurationText(totalDuration)}`
+                                : ''}
+                              )
+                            </span>
                           </>
                         )}
                       </div>

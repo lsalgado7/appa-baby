@@ -1,7 +1,8 @@
-import type { NursingSession, PumpingSession, ActiveTimerState } from '../types';
+import type { NursingSession, PumpingSession, BottleFeeding, ActiveTimerState } from '../types';
 
 const NURSING_KEY = 'appa_nursing_sessions';
 const PUMPING_KEY = 'appa_pumping_sessions';
+const BOTTLE_KEY = 'appa_bottle_feedings';
 const FAMILY_KEY = 'appa_family_id';
 const LOGGED_BY_KEY = 'appa_logged_by';
 const ACTIVE_TIMER_KEY = 'appa_active_timer';
@@ -64,6 +65,20 @@ export function getLocalPumpingSessions(): PumpingSession[] {
 
 export function saveLocalPumpingSessions(sessions: PumpingSession[]): void {
   localStorage.setItem(PUMPING_KEY, JSON.stringify(sessions));
+}
+
+// Local Bottle Feedings
+export function getLocalBottleFeedings(): BottleFeeding[] {
+  try {
+    const data = localStorage.getItem(BOTTLE_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveLocalBottleFeedings(feedings: BottleFeeding[]): void {
+  localStorage.setItem(BOTTLE_KEY, JSON.stringify(feedings));
 }
 
 // Local Active Timer Backup

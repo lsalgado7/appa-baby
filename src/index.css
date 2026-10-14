@@ -38,3 +38,12 @@ html, body, #root {
   padding: 0;
   overscroll-behavior-y: none;
 }
+
+/* iOS Safe Area Utilities for Dynamic Island / Camera Punch-hole */
+.safe-top {
+  padding-top: max(env(safe-area-inset-top, 0px), 1.25rem);
+}
+
+.safe-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 1.5rem);
+}

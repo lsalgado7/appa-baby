@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import type { NursingSession, PumpingSession, ActiveTimerState } from '../types';
+import type { NursingSession, PumpingSession, BottleFeeding, ActiveTimerState } from '../types';
 
 let cachedClient: SupabaseClient | null = null;
 
@@ -118,6 +118,52 @@ export async function deleteRemotePumpingSession(id: string): Promise<boolean> {
   return true;
 }
 
+// ----------------- Bottle Feedings API -----------------
+
+export async function fetchRemoteBottleFeedings(familyId: string): Promise<BottleFeeding[]> {
+  const client = getSupabase();
+  if (!client) return [];
+
+  const { data, error } = await client
+    .from('bottle_feedings')
+    .select('*')
+    .eq('family_id', familyId)
+    .order('start_time', { ascending: false })
+    .limit(100);
+
+  if (error) {
+    console.error('Error fetching bottle feedings:', error);
+    return [];
+  }
+  return (data as BottleFeeding[]) || [];
+}
+
+export async function upsertRemoteBottleFeeding(feeding: BottleFeeding): Promise<boolean> {
+  const client = getSupabase();
+  if (!client) return false;
+
+  const { error } = await client.from('bottle_feedings').upsert(feeding);
+  if (error) {
+    console.error('Error saving bottle feeding:', error);
+    return false;
+  }
+  return true;
+}
+
+export async function deleteRemoteBottleFeeding(id: string): Promise<boolean> {
+  const client = getSupabase();
+  if (!client) return false;
+
+  const { error } = await client.from('bottle_feedings').delete().eq('id', id);
+  if (error) {
+    console.error('Error deleting bottle feeding:', error);
+    return false;
+  }
+  return true;
+}
+
+// ----------------- Active Timer API -----------------
+
 export async function fetchRemoteActiveTimer(familyId: string): Promise<ActiveTimerState | null> {
   const client = getSupabase();
   if (!client) return null;
@@ -153,6 +199,7 @@ export function subscribeToFamilySync(
   callbacks: {
     onNursingChange: (session: NursingSession, eventType: 'INSERT' | 'UPDATE' | 'DELETE') => void;
     onPumpingChange: (session: PumpingSession, eventType: 'INSERT' | 'UPDATE' | 'DELETE') => void;
+    onBottleChange: (feeding: BottleFeeding, eventType: 'INSERT' | 'UPDATE' | 'DELETE') => void;
     onTimerChange: (timer: ActiveTimerState) => void;
   }
 ) {
@@ -189,6 +236,21 @@ export function subscribeToFamilySync(
           ? payload.new
           : payload.old) as PumpingSession;
         callbacks.onPumpingChange(item, payload.eventType as any);
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'bottle_feedings',
+        filter: `family_id=eq.${familyId}`,
+      },
+      (payload) => {
+        const item = (payload.new && Object.keys(payload.new).length > 0
+          ? payload.new
+          : payload.old) as BottleFeeding;
+        callbacks.onBottleChange(item, payload.eventType as any);
       }
     )
     .on(

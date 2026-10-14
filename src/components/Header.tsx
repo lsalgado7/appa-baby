@@ -24,7 +24,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenFamilyModal }) => {
   };
 
   return (
-    <header className="w-full pt-4 pb-3 px-4 flex items-center justify-between border-b border-[#e6e2da] dark:border-[#27272a] bg-[#f9f8f6] dark:bg-[#09090b] sticky top-0 z-30 transition-colors">
+    <header className="w-full safe-top pb-3 px-4 flex items-center justify-between border-b border-[#e6e2da] dark:border-[#27272a] bg-[#f9f8f6] dark:bg-[#09090b] sticky top-0 z-30 transition-colors">
       <div className="flex items-center gap-2">
         <h1 className="text-xl font-medium tracking-tight text-[#1f1d1a] dark:text-[#f4f4f5]">
           appa baby

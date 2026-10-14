@@ -95,10 +95,25 @@ create table public.pumping_sessions (
   created_at timestamptz not null default now()
 );
 
--- 4. Active Live Timer State Table
+-- 4. Completed Bottle Feedings Table
+create table public.bottle_feedings (
+  id uuid primary key default gen_random_uuid(),
+  family_id text not null references public.families(id) on delete cascade,
+  start_time timestamptz not null default now(),
+  end_time timestamptz not null default now(),
+  duration_seconds integer not null default 0,
+  amount numeric(5, 2) not null default 0,
+  unit text not null default 'oz' check (unit in ('oz', 'ml')),
+  milk_type text not null default 'breast_milk' check (milk_type in ('breast_milk', 'formula', 'mixed')),
+  logged_by text not null default 'Mom',
+  notes text,
+  created_at timestamptz not null default now()
+);
+
+-- 5. Active Live Timer State Table
 create table public.active_timers (
   family_id text primary key references public.families(id) on delete cascade,
-  session_type text not null check (session_type in ('nursing', 'pumping')),
+  session_type text not null check (session_type in ('nursing', 'pumping', 'bottle')),
   status text not null check (status in ('running', 'paused', 'idle')),
   active_side text not null check (active_side in ('left', 'right', 'both', 'none')),
   left_duration_seconds integer not null default 0,
@@ -112,11 +127,13 @@ create table public.active_timers (
 -- Enable Realtime
 alter publication supabase_realtime add table public.nursing_sessions;
 alter publication supabase_realtime add table public.pumping_sessions;
+alter publication supabase_realtime add table public.bottle_feedings;
 alter publication supabase_realtime add table public.active_timers;
 
 -- Performance Indexes
 create index idx_nursing_family_start on public.nursing_sessions (family_id, start_time desc);
 create index idx_pumping_family_start on public.pumping_sessions (family_id, start_time desc);
+create index idx_bottle_family_start on public.bottle_feedings (family_id, start_time desc);
 ```
 
 3. In `appa-baby`, create a `.env` file or configure via the in-app **Family Sync Modal**:

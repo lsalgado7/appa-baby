@@ -2,7 +2,8 @@ export type FeedSide = 'left' | 'right';
 export type ActiveSide = 'left' | 'right' | 'both' | 'none';
 export type TimerStatus = 'idle' | 'running' | 'paused';
 export type VolumeUnit = 'oz' | 'ml';
-export type SessionType = 'nursing' | 'pumping';
+export type SessionType = 'nursing' | 'pumping' | 'bottle';
+export type MilkType = 'breast_milk' | 'formula' | 'mixed';
 
 export interface NursingSession {
   id: string;
@@ -32,6 +33,20 @@ export interface PumpingSession {
   created_at: string;
 }
 
+export interface BottleFeeding {
+  id: string;
+  family_id: string;
+  start_time: string; // ISO
+  end_time?: string;  // ISO
+  duration_seconds: number;
+  amount: number;
+  unit: VolumeUnit;
+  milk_type: MilkType;
+  logged_by: string;
+  notes?: string;
+  created_at: string;
+}
+
 export interface ActiveTimerState {
   family_id: string;
   session_type: SessionType;
@@ -47,4 +62,5 @@ export interface ActiveTimerState {
 
 export type TimelineItem = 
   | ({ type: 'nursing' } & NursingSession)
-  | ({ type: 'pumping' } & PumpingSession);
+  | ({ type: 'pumping' } & PumpingSession)
+  | ({ type: 'bottle' } & BottleFeeding);

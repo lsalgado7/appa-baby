@@ -75,9 +75,11 @@ export const PumpingTimer: React.FC = () => {
     setIsSaving(true);
     try {
       await saveActiveSession(notes, {
-        left: leftVal,
-        right: rightVal,
-        unit,
+        pumpingAmounts: {
+          left: leftVal,
+          right: rightVal,
+          unit,
+        },
       });
       setNotes('');
       setLeftAmount('0');
